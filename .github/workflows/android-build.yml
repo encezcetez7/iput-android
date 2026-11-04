@@ -31,7 +31,6 @@ jobs:
       - name: Install Android SDK packages
         run: |
           SDKMANAGER=$(find "$ANDROID_HOME" -name sdkmanager -type f | head -n 1)
-          echo "Using SDK manager: $SDKMANAGER"
           yes | "$SDKMANAGER" --licenses
           "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
@@ -41,17 +40,26 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Extract IPUT project
+        id: locate
         run: |
           unzip -q IPUT_github_build_ready.zip -d extracted
-          test -d extracted/IPUT/android
+          find extracted -maxdepth 8 -type f
+          BUILD_FILE=$(find extracted -type f -path '*/android/app/build.gradle.kts' -print -quit)
+          if [ -z "$BUILD_FILE" ]; then
+            echo "Android build.gradle.kts not found in ZIP"
+            exit 1
+          fi
+          ANDROID_DIR=$(dirname "$(dirname "$BUILD_FILE")")
+          echo "android_dir=$ANDROID_DIR" >> "$GITHUB_OUTPUT"
+          echo "Found Android project: $ANDROID_DIR"
 
       - name: Build APK
-        working-directory: extracted/IPUT/android
+        working-directory: ${{ steps.locate.outputs.android_dir }}
         run: gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: IPUT-debug-APK
-          path: extracted/IPUT/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.locate.outputs.android_dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
